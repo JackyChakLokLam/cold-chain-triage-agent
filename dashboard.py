@@ -154,8 +154,9 @@ def dispatch_real_email(record: dict) -> tuple[bool, str]:
         with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as server:
             server.login(smtp_user, smtp_pass)
             server.send_message(msg)
+        masked = recipient[0] + "***@" + recipient.split("@")[-1] if "@" in recipient else recipient
         mode_tag = " (Sandbox Override)" if override_email else ""
-        return True, f"Dispatched via SMTP to {recipient}{mode_tag}"
+        return True, f"Dispatched via SMTP to {masked}{mode_tag}"
     except Exception as e:
         return False, f"SMTP Error: {str(e)}"
 
