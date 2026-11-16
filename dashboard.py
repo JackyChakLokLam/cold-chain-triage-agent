@@ -28,7 +28,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     --red: #ef4444; --red-bg: rgba(239, 68, 68, 0.15);
     --amber: #f59e0b; --amber-bg: rgba(245, 158, 11, 0.15);
     --green: #10b981; --green-bg: rgba(16, 185, 129, 0.15);
-    --blue: #3b82f6;
+    --blue: #3b82f6; --blue-bg: rgba(59, 130, 246, 0.15);
   }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
   .container { max-width: 1100px; margin: 0 auto; }
@@ -45,11 +45,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .badge { padding: 4px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
   .sev-HIGH_CRITICAL { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
   .sev-MEDIUM_DELAY { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber); }
+  .edited-tag { background: var(--blue-bg); color: #93c5fd; border: 1px solid var(--blue); margin-left: 6px; }
   .status-PENDING_HUMAN_APPROVAL { background: var(--amber-bg); color: var(--amber); }
   .status-APPROVED_AND_DISPATCHED { background: var(--green-bg); color: var(--green); }
   .status-DISPATCH_FAILED, .status-REJECTED { background: var(--red-bg); color: var(--red); }
-  .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 14px; }
+  .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
   .draft-box { background: #0b1120; border: 1px solid var(--border); border-radius: 6px; padding: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88rem; white-space: pre-wrap; line-height: 1.6; color: #e2e8f0; }
+  textarea.draft-editor { width: 100%; box-sizing: border-box; min-height: 230px; background: #0b1120; border: 1px solid #475569; border-radius: 6px; padding: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88rem; line-height: 1.6; color: #f8fafc; resize: vertical; outline: none; }
+  textarea.draft-editor:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25); }
   .actions { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; }
   button { cursor: pointer; border: none; border-radius: 6px; padding: 9px 16px; font-weight: 600; font-size: 0.85rem; transition: opacity 0.15s; }
   button:hover:not(:disabled) { opacity: 0.9; }
@@ -57,7 +60,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .btn-run { background: var(--blue); color: #ffffff; }
   .btn-approve { background: var(--green); color: #052e16; }
   .btn-reject { background: transparent; border: 1px solid var(--border); color: var(--muted); }
-  .banner { background: rgba(59, 130, 246, 0.15); border: 1px solid var(--blue); color: #93c5fd; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 0.88rem; }
+  .banner { background: var(--blue-bg); border: 1px solid var(--blue); color: #93c5fd; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 0.88rem; }
   .dispatch-note { font-size: 0.82rem; color: var(--green); margin-top: 10px; text-align: right; }
   .dispatch-err { font-size: 0.82rem; color: var(--red); margin-top: 10px; text-align: right; }
   .empty { text-align: center; padding: 48px; color: var(--muted); background: var(--card); border-radius: 10px; border: 1px dashed var(--border); }
@@ -68,7 +71,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <header>
     <div>
       <h1>Cold-Chain Exception Triage & Approval Console</h1>
-      <div class="subtitle">Hybrid Edge-Cloud Pipeline (Local GPU PII Redaction + DeepSeek Tool Calling + SMTP Dispatch)</div>
+      <div class="subtitle">Hybrid Edge-Cloud Pipeline (Local GPU PII Redaction + DeepSeek Tool Calling + Human Edit & SMTP)</div>
     </div>
     <div class="header-actions">
       <form method="POST" action="/run-agent" onsubmit="const btn=this.querySelector('button'); btn.disabled=true; btn.innerText='Running Local GPU + DeepSeek...';">
@@ -180,34 +183,49 @@ def render_page() -> str:
             draft = html.escape(str(raw_draft))
             reviewed_at = html.escape(str(r.get("reviewed_at", "")))
             dispatch_result = html.escape(str(r.get("dispatch_result", "")))
+            edited_badge = '<span class="badge edited-tag">HUMAN EDITED</span>' if r.get("human_edited") else ""
 
             if status == "PENDING_HUMAN_APPROVAL":
-                action_section = f"""
-                <form method="POST" action="/decision" class="actions">
-                  <input type="hidden" name="index" value="{idx}">
-                  <button type="submit" name="decision" value="REJECTED" class="btn-reject">Hold / Reject</button>
-                  <button type="submit" name="decision" value="APPROVED_AND_DISPATCHED" class="btn-approve">Approve & Dispatch Email</button>
-                </form>"""
+                blocks.append(f"""
+                <div class="card">
+                  <form method="POST" action="/decision">
+                    <input type="hidden" name="index" value="{idx}">
+                    <div class="card-header">
+                      <div>
+                        <strong style="font-size:1.1rem;">{shipment_id}</strong>
+                        <span class="badge sev-{sev}" style="margin-left:8px;">{sev}</span>
+                      </div>
+                      <span class="badge status-{status}">{status}</span>
+                    </div>
+                    <div class="meta">
+                      <span>Action: <strong>{action_type}</strong></span>
+                      <span style="color:#93c5fd; font-size:0.8rem;">Editable before dispatch</span>
+                    </div>
+                    <textarea name="edited_draft" class="draft-editor">{draft}</textarea>
+                    <div class="actions">
+                      <button type="submit" name="decision" value="REJECTED" class="btn-reject">Hold / Reject</button>
+                      <button type="submit" name="decision" value="APPROVED_AND_DISPATCHED" class="btn-approve">Approve & Dispatch Email</button>
+                    </div>
+                  </form>
+                </div>""")
             else:
                 result_class = "dispatch-err" if status in ("DISPATCH_FAILED", "REJECTED") else "dispatch-note"
                 result_line = f'<div class="{result_class}">{dispatch_result}</div>' if dispatch_result else ""
-                action_section = f"""
-                {result_line}
-                <div class="meta" style="margin-top:6px; margin-bottom:0; text-align:right;">Reviewed: {reviewed_at}</div>"""
-
-            blocks.append(f"""
-            <div class="card">
-              <div class="card-header">
-                <div>
-                  <strong style="font-size:1.1rem;">{shipment_id}</strong>
-                  <span class="badge sev-{sev}" style="margin-left:8px;">{sev}</span>
-                </div>
-                <span class="badge status-{status}">{status}</span>
-              </div>
-              <div class="meta">Action: <strong>{action_type}</strong></div>
-              <div class="draft-box">{draft}</div>
-              {action_section}
-            </div>""")
+                blocks.append(f"""
+                <div class="card">
+                  <div class="card-header">
+                    <div>
+                      <strong style="font-size:1.1rem;">{shipment_id}</strong>
+                      <span class="badge sev-{sev}" style="margin-left:8px;">{sev}</span>
+                      {edited_badge}
+                    </div>
+                    <span class="badge status-{status}">{status}</span>
+                  </div>
+                  <div class="meta"><span>Action: <strong>{action_type}</strong></span></div>
+                  <div class="draft-box">{draft}</div>
+                  {result_line}
+                  <div style="color:var(--muted); font-size:0.82rem; margin-top:6px; text-align:right;">Reviewed: {reviewed_at}</div>
+                </div>""")
         cards_html = "\n".join(blocks)
 
     return (
@@ -253,9 +271,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             params = parse_qs(body)
             idx = int(params.get("index", ["-1"])[0])
             decision = params.get("decision", [""])[0]
+            edited_draft = params.get("edited_draft", [None])[0]
 
             records = load_records()
             if 0 <= idx < len(records) and decision in ("APPROVED_AND_DISPATCHED", "REJECTED"):
+                if edited_draft is not None:
+                    normalized_edited = edited_draft.replace("\r\n", "\n").strip()
+                    original_draft = str(records[idx].get("draft_email") or records[idx].get("draft_content") or "").replace("\r\n", "\n").strip()
+                    if normalized_edited != original_draft:
+                        records[idx]["human_edited"] = True
+                    records[idx]["draft_email"] = normalized_edited
+
                 if decision == "APPROVED_AND_DISPATCHED":
                     ok, info = dispatch_real_email(records[idx])
                     new_status = "APPROVED_AND_DISPATCHED" if ok else "DISPATCH_FAILED"
