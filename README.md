@@ -16,6 +16,7 @@ pip install -r requirements.txt
 # Add DEEPSEEK_API_KEY=your_key to .env
 python setup_data.py
 python agent.py
+```
 
 ## Human-in-the-Loop Approval Console (`dashboard.py`)
 Run `python dashboard.py` and open `http://127.0.0.1:8080` to review drafted carrier check-calls and approve or hold escalations with full audit trail persistence.
